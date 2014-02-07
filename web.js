@@ -9,7 +9,7 @@ var app = express();
  app.use(express.logger());
 
 var fs = require('fs');
-var buf = fs.readFileSync('.index.html');
+var buf = fs.readFileSync('./index.html');
 app.get('/', function(request, response) {
   response.send(buf.toString());
 });
