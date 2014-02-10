@@ -24,10 +24,10 @@ References:
 var fs = require('fs');
 var program = require('commander');
 var cheerio = require('cheerio');
+var sys = require('util');
 var rest = require('restler');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
-var URL_DEFAULT = "http://www.google.com/";
 
 var assertFileExists = function(infile) {
     var instr = infile.toString();
@@ -38,8 +38,16 @@ var assertFileExists = function(infile) {
     return instr;
 };
 
-var cheerioHtmlFile = function(htmlfile) {
+var Cheeriohtmlfile = function(htmlfile) {
     return cheerio.load(fs.readFileSync(htmlfile));
+};
+
+/* 
+Loading string, not file. See API manual.
+https://github.com/MatthewMueller/cheerio#loading
+*/
+var cheerioString = function(string) {
+    return cheerio.load(string);
 };
 
 var loadChecks = function(checksfile) {
@@ -57,16 +65,21 @@ var checkHtmlFile = function(htmlfile, checksfile) {
     return out;
 };
 
-var getResp = function(url) {
-    rest.get(url).on('complete', function(result) {
-	if (result instanceof Error) {
-	    console.log('Error:', result.message);
-	    this.retry(5000);
-	} else {
-	    console.log(result);
-	}
-    })
+
+/*
+Use cheerioString to load html.
+*/
+var checkString = function(str, checksfile) {
+    $ = cheerioString(str);
+    var checks = loadChecks(checksfile).sort();
+    var out = {};
+    for(var ii in checks) {
+	var present = $(checks[ii]).length > 0;
+	out[checks[ii]] = present;
+    }
+    return out;
 };
+
 
 var clone = function(fn) {
     // Workaround for commander.js issue.
@@ -78,16 +91,32 @@ if(require.main == module) {
     program
 	.option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
 	.option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
-	.option('-u, --url <URL>', 'URL', clone(assertFileExists), URL_DEFAULT)
+	.option('-u, --url <URL>', 'URL')
 	.parse(process.argv);
     if(program.url) {
-	var checkJson = checkHtmlFile(getResp(program.url), program.checks);
-    } else {
-	var checkJson = checkHtmlFile(program.file, program.checks);
+/* 
+   Asynchronous programing
+   Reference: https://class.coursera.org/startup-001/forum/thread?thread_id=4915#post-23139
+*/
+	rest.get(program.url).on('complete', function(result) {
+	    if (result instanceof Error) {
+		console.log('Error: ' + result.message);
+		this.retry(5000);
+	    } else {
+//		console.log('Check: ' + result);
+		var checkJson = checkString(result, program.checks);
+		var outJson = JSON.stringify(checkJson, null, 4);
+		console.log(outJson);
+	    } 
+	})
     }
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
-    } else {
-	exports.checkHtmlFile = checkHtmlFile;
+    else {
+	var checkJson = checkHtmlFile(program.file, program.checks);
+	var outJson = JSON.stringify(checkJson, null, 4);
+	console.log(outJson);
+    }
+} else {
+    exports.checkHtmlFile = checkHtmlFile;
 }
+
 
